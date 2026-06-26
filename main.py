@@ -5,6 +5,8 @@ import threading
 import json
 import ast
 import sqlite3
+import recorder
+from concurrent.futures import ThreadPoolExecutor
 
 root = ctk.CTk()
 root.title("Todo Assistant")
@@ -15,18 +17,33 @@ root.geometry(f"900x600+{x}+{y}")
 root.resizable(False,False)
 
 
-def send_text(text=None):
-	text = entry.get()
-	entry.delete(0, 'end')
-	ai_label.configure(text="Thinking... ")
-	button.configure(state='disabled')
+def send_text(text=None,audio=False):
+	if audio == False:
+		text = entry.get()
+		entry.delete(0, 'end')
+		ai_label.configure(text="Thinking... ")
+		button.configure(state='disabled')
 
 
-	threading.Thread(
-		target = submit,
-		args = (text,),
-		daemon = True
-	).start()
+		threading.Thread(
+			target = submit,
+			args = (text,),
+			daemon = True
+		).start()
+
+	else:
+		ai_label.configure(text="Thinking... ")
+		button.configure(state="disabled")
+		recording_b.configure(state='disabled')
+		#recording_stop_b.configure(state='disabled')
+
+		threading.Thread(
+			target = submit,
+			args = (text,),
+			daemon = True
+
+		).start()
+
 
 
 def submit(text=None):
@@ -302,7 +319,7 @@ class Database:
 		# print(new_text)
 		self.connection.commit()
 		self.cursor.execute(f"""INSERT INTO Todos VALUES 
-								('{new_text}',"{date}")""")
+								('{new_text}','{date}')""")
 		self.connection.commit()
 		
 
@@ -345,8 +362,31 @@ def get_proper_tool(response):
 def update_ui(response):
 	ai_label.configure(text = response)
 	button.configure(state = 'normal')
+	recording_b.configure(state='normal')
 
 
+def start_recording():
+	recording_b.grid_forget()
+	recording_stop_b.grid(column=1,row=1,padx=5)
+	recorder.start_recording(device = 25)
+
+def stop_recording():
+	recording_stop_b.grid_forget()
+	recording_b.grid(column=1,row=1,padx=5)
+
+	threading.Thread(
+	 	target = transcribe_text,
+	 	daemon = True
+	).start()
+	
+def transcribe_text():
+	with ThreadPoolExecutor(max_workers=1) as executor:
+		future = executor.submit(recorder.stop_recording_and_transcribe)
+
+		print("Doing other work...")
+
+		text = future.result()  # Waits until transcribe() finishes
+		send_text(text,audio=True)
 
 frame_main = ctk.CTkFrame(root,width = 600,height = 600,border_width = 0)
 frame_main.pack(side="left", fill = "both", expand = True)
@@ -368,9 +408,12 @@ ai_label = ctk.CTkLabel(chat_label_frame, text = """Welcome to Todo Assistant, I
 ai_label.grid(column=0,row=0,sticky = 'W')
 
 entry = ctk.CTkEntry(buttons_entry_frame, width= 200,height =80)
-entry.grid(column=0,row=0,pady=5)
+entry.grid(column=0,row=0,pady=5,rowspan = 2)
 entry.bind("<Return>",send_text)
 button = ctk.CTkButton(buttons_entry_frame, text = "send", width =20,command = send_text)
 button.grid(column=1,row=0,padx=5)
+recording_b = ctk.CTkButton(buttons_entry_frame, text = "⏺️", width = 20, command = start_recording)
+recording_b.grid(column=1,row=1,padx=5)
+recording_stop_b = ctk.CTkButton(buttons_entry_frame, text = "STOP",width =20,command = stop_recording)
 todo = Todo()
 root.mainloop()
